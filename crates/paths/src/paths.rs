@@ -8,6 +8,8 @@ use util::paths::SanitizedPath;
 pub use util::paths::home_dir;
 use util::rel_path::RelPath;
 
+pub mod seat;
+
 /// A default editorconfig file name to use when resolving project settings.
 pub const EDITORCONFIG_NAME: &str = ".editorconfig";
 
@@ -106,6 +108,9 @@ pub fn set_custom_data_dir(dir: &str) -> &'static PathBuf {
     }
     CUSTOM_DATA_DIR.get_or_init(|| {
         let path = PathBuf::from(dir);
+        if let Err(error) = seat::ensure_writable(&path) {
+            panic!("{error}");
+        }
         std::fs::create_dir_all(&path).expect("failed to create custom data directory");
         let canonicalized = path
             .canonicalize()
@@ -119,10 +124,17 @@ pub fn set_custom_data_dir(dir: &str) -> &'static PathBuf {
 }
 
 /// Returns the path to the configuration directory used by Zed.
+///
+/// When the process is bound to a QENEX seat, this is a directory inside the
+/// seat workspace instead of the user's global config directory.
 pub fn config_dir() -> &'static PathBuf {
     CONFIG_DIR.get_or_init(|| {
         if let Some(custom_dir) = CUSTOM_DATA_DIR.get() {
             custom_dir.join("config")
+        } else if let Some(seat_dir) =
+            seat::scoped_root(seat::current_seat().as_ref(), seat::RootKind::Config)
+        {
+            seat_dir
         } else if cfg!(target_os = "windows") {
             dirs::config_dir()
                 .expect("failed to determine RoamingAppData directory")
@@ -141,10 +153,17 @@ pub fn config_dir() -> &'static PathBuf {
 }
 
 /// Returns the path to the data directory used by Zed.
+///
+/// When the process is bound to a QENEX seat, this is a directory inside the
+/// seat workspace instead of the user's global data directory.
 pub fn data_dir() -> &'static PathBuf {
     CURRENT_DATA_DIR.get_or_init(|| {
         if let Some(custom_dir) = CUSTOM_DATA_DIR.get() {
             custom_dir.clone()
+        } else if let Some(seat_dir) =
+            seat::scoped_root(seat::current_seat().as_ref(), seat::RootKind::Data)
+        {
+            seat_dir
         } else if cfg!(target_os = "macos") {
             home_dir()
                 .join("Library/Application Support")
@@ -166,9 +185,19 @@ pub fn data_dir() -> &'static PathBuf {
     })
 }
 
+/// Returns the path to the state directory used by Zed.
+///
+/// When the process is bound to a QENEX seat, this is a directory inside the
+/// seat workspace instead of the user's global state directory.
 pub fn state_dir() -> &'static PathBuf {
     static STATE_DIR: OnceLock<PathBuf> = OnceLock::new();
     STATE_DIR.get_or_init(|| {
+        if let Some(seat_dir) =
+            seat::scoped_root(seat::current_seat().as_ref(), seat::RootKind::State)
+        {
+            return seat_dir;
+        }
+
         if cfg!(target_os = "macos") {
             return home_dir().join(".local").join("state").join(APP_NAME);
         }
@@ -190,9 +219,18 @@ pub fn state_dir() -> &'static PathBuf {
 }
 
 /// Returns the path to the temp directory used by Zed.
+///
+/// When the process is bound to a QENEX seat, this is a directory inside the
+/// seat workspace instead of the user's global cache directory.
 pub fn temp_dir() -> &'static PathBuf {
     static TEMP_DIR: OnceLock<PathBuf> = OnceLock::new();
     TEMP_DIR.get_or_init(|| {
+        if let Some(seat_dir) =
+            seat::scoped_root(seat::current_seat().as_ref(), seat::RootKind::Temp)
+        {
+            return seat_dir;
+        }
+
         if cfg!(target_os = "macos") {
             return dirs::cache_dir()
                 .expect("failed to determine cachesDirectory directory")
@@ -225,9 +263,18 @@ pub fn hang_traces_dir() -> &'static PathBuf {
 }
 
 /// Returns the path to the logs directory.
+///
+/// When the process is bound to a QENEX seat, this is a directory inside the
+/// seat workspace instead of the user's global log directory.
 pub fn logs_dir() -> &'static PathBuf {
     static LOGS_DIR: OnceLock<PathBuf> = OnceLock::new();
     LOGS_DIR.get_or_init(|| {
+        if let Some(seat_dir) =
+            seat::scoped_root(seat::current_seat().as_ref(), seat::RootKind::Logs)
+        {
+            return seat_dir;
+        }
+
         if cfg!(target_os = "macos") {
             home_dir().join("Library/Logs").join(APP_NAME)
         } else {
