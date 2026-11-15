@@ -324,7 +324,12 @@ fn main() {
             client::telemetry::guessed_os_name(),
             client::telemetry::os_version(),
         );
-        println!("Zed System Specs (from CLI):\n{}", system_specs);
+        let mut specs_output = system_specs.to_string();
+        if let Some(seat_info) = paths::seat::info_line() {
+            specs_output.push('\n');
+            specs_output.push_str(&seat_info);
+        }
+        println!("Zed System Specs (from CLI):\n{}", specs_output);
         return;
     }
 
@@ -344,6 +349,10 @@ fn main() {
             .as_deref()
             .unwrap_or("unknown"),
     );
+
+    if let Some(seat_info) = paths::seat::info_line() {
+        log::info!("{}", seat_info);
+    }
 
     #[cfg(windows)]
     check_for_conpty_dll();
